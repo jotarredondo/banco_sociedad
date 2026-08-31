@@ -2,6 +2,7 @@ package com.duoc.banco_sociedad.config;
 
 import com.duoc.banco_sociedad.listener.BatchJobListener;
 import com.duoc.banco_sociedad.listener.BatchStepListener;
+import com.duoc.banco_sociedad.listener.DailyTransactionSummaryListener;
 import com.duoc.banco_sociedad.listener.TransactionSkipListener;
 import com.duoc.banco_sociedad.model.Transaction;
 import com.duoc.banco_sociedad.policy.TransactionRetryPolicy;
@@ -48,6 +49,7 @@ public class DailyTransactionJobConfig {
     private final TransactionRetryPolicy transactionRetryPolicy;
     private final BatchJobListener batchJobListener;
     private final BatchStepListener batchStepListener;
+    private final DailyTransactionSummaryListener dailyTransactionSummaryListener;
 
     public DailyTransactionJobConfig(
             TransactionProcessor transactionProcessor,
@@ -56,7 +58,9 @@ public class DailyTransactionJobConfig {
             TransactionSkipListener transactionSkipListener,
             TransactionRetryPolicy transactionRetryPolicy,
             BatchJobListener batchJobListener,
-            BatchStepListener batchStepListener) {
+            BatchStepListener batchStepListener,
+            DailyTransactionSummaryListener dailyTransactionSummaryListener) {
+
 
         this.transactionProcessor = transactionProcessor;
         this.batchTaskExecutor = batchTaskExecutor;
@@ -65,6 +69,7 @@ public class DailyTransactionJobConfig {
         this.transactionRetryPolicy = transactionRetryPolicy;
         this.batchJobListener = batchJobListener;
         this.batchStepListener = batchStepListener;
+        this.dailyTransactionSummaryListener = dailyTransactionSummaryListener;
     }
 
     @Bean
@@ -163,6 +168,7 @@ public class DailyTransactionJobConfig {
 
         return new JobBuilder("dailyTransactionJob", jobRepository)
                 .listener(batchJobListener)
+                .listener(dailyTransactionSummaryListener)
                 .start(processTransactionsStep)
                 .build();
     }
