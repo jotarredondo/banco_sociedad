@@ -5,12 +5,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Entity
-@Table(name = "annual_statement_")
+@Table(name = "annual_transaction")
 @Getter
 @Setter
-public class AnnualStatement {
+public class AnnualTransaction {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -18,13 +19,11 @@ public class AnnualStatement {
 
     private Long accountId;
 
-    private Integer year_;
+    private LocalDate date;
 
-    private BigDecimal totalDeposits;
+    private String transactionType;
 
-    private BigDecimal totalWithdrawals;
+    private BigDecimal amount;
 
-    private BigDecimal finalBalance;
-
-    private String status;
+    private String description;
 }

@@ -3,7 +3,14 @@ package com.duoc.banco_sociedad.config;
 import com.duoc.banco_sociedad.listener.BatchJobListener;
 import com.duoc.banco_sociedad.listener.BatchStepListener;
 import com.duoc.banco_sociedad.model.AnnualStatement;
+import com.duoc.banco_sociedad.model.AnnualTransaction;
+import com.duoc.banco_sociedad.policy.TransactionSkipPolicy;
 import com.duoc.banco_sociedad.processor.AnnualStatementProcessor;
+import com.duoc.banco_sociedad.processor.AnnualTransactionProcessor;
+
+import com.duoc.banco_sociedad.repository.AnnualTransactionRepository;
+import org.springframework.batch.core.configuration.annotation.StepScope;
+import org.springframework.batch.infrastructure.item.support.ListItemReader;
 import jakarta.persistence.EntityManagerFactory;
 
 import org.springframework.batch.core.job.Job;
@@ -23,54 +30,120 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.task.AsyncTaskExecutor;
 
 import org.springframework.transaction.PlatformTransactionManager;
 
-import org.springframework.core.task.AsyncTaskExecutor;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 
 @Configuration
 public class AnnualStatementJobConfig {
 
-    private final AnnualStatementProcessor annualStatementProcessor;
+    private final AnnualTransactionProcessor annualTransactionProcessor;
     private final AsyncTaskExecutor batchTaskExecutor;
     private final BatchJobListener batchJobListener;
     private final BatchStepListener batchStepListener;
+    private final TransactionSkipPolicy transactionSkipPolicy;
+    private final AnnualStatementProcessor annualStatementProcessor;
 
     public AnnualStatementJobConfig(
+            AnnualTransactionProcessor annualTransactionProcessor,
             AnnualStatementProcessor annualStatementProcessor,
             AsyncTaskExecutor batchTaskExecutor,
             BatchJobListener batchJobListener,
-            BatchStepListener batchStepListener) {
+            BatchStepListener batchStepListener,
+            TransactionSkipPolicy transactionSkipPolicy) {
 
+        this.annualTransactionProcessor = annualTransactionProcessor;
         this.annualStatementProcessor = annualStatementProcessor;
         this.batchTaskExecutor = batchTaskExecutor;
         this.batchJobListener = batchJobListener;
         this.batchStepListener = batchStepListener;
+        this.transactionSkipPolicy = transactionSkipPolicy;
     }
 
     @Bean
-    public SynchronizedItemStreamReader<AnnualStatement> annualStatementReader() {
+    public SynchronizedItemStreamReader<AnnualTransaction>
+    annualTransactionReader() {
 
-        FlatFileItemReader<AnnualStatement> delegate =
-                new FlatFileItemReaderBuilder<AnnualStatement>()
-                        .name("annualStatementReader")
-                        .resource(new ClassPathResource("data/annual_statements.csv"))
+        FlatFileItemReader<AnnualTransaction> delegate =
+                new FlatFileItemReaderBuilder<AnnualTransaction>()
+                        .name("annualTransactionReader")
+                        .resource(
+                                new ClassPathResource(
+                                        "data/cuentas_anuales.csv"
+                                )
+                        )
                         .linesToSkip(1)
                         .delimited()
                         .names(
-                                "id",
-                                "accountId",
-                                "year_",
-                                "totalDeposits",
-                                "totalWithdrawals",
-                                "finalBalance",
-                                "status"
+                                "cuenta_id",
+                                "fecha",
+                                "transaccion",
+                                "monto",
+                                "descripcion"
                         )
-                        .targetType(AnnualStatement.class)
+                        .fieldSetMapper(fieldSet -> {
+
+                            AnnualTransaction transaction =
+                                    new AnnualTransaction();
+
+                            transaction.setAccountId(
+                                    fieldSet.readLong("cuenta_id")
+                            );
+
+                            transaction.setDate(
+                                    parseDate(
+                                            fieldSet.readString("fecha"))
+                            );
+
+                            transaction.setTransactionType(
+                                    fieldSet.readString("transaccion"));
+
+                            String amount =
+                                    fieldSet.readString("monto");
+
+                            if (amount == null || amount.isBlank()) {
+
+                                transaction.setAmount(null);
+
+                            } else {
+
+                                transaction.setAmount(
+                                        new BigDecimal(amount));
+                            }
+
+                            transaction.setDescription(
+                                    fieldSet.readString("descripcion"));
+
+                            return transaction;
+                        })
                         .build();
 
-        return new SynchronizedItemStreamReaderBuilder<AnnualStatement>()
+        return new SynchronizedItemStreamReaderBuilder<AnnualTransaction>()
                 .delegate(delegate)
+                .build();
+    }
+
+    @Bean
+    @StepScope
+    public ListItemReader<Long> annualAccountIdReader(
+            AnnualTransactionRepository annualTransactionRepository) {
+
+        return new ListItemReader<>(
+                annualTransactionRepository.findDistinctAccountIds()
+        );
+    }
+
+    @Bean
+    public JpaItemWriter<AnnualTransaction> annualTransactionWriter(
+            EntityManagerFactory entityManagerFactory) {
+
+        return new JpaItemWriterBuilder<AnnualTransaction>()
+                .entityManagerFactory(entityManagerFactory)
                 .build();
     }
 
@@ -84,16 +157,23 @@ public class AnnualStatementJobConfig {
     }
 
     @Bean
-    public Step generateAnnualStatementStep(
+    public Step loadAnnualTransactionsStep(
             JobRepository jobRepository,
             PlatformTransactionManager transactionManager,
-            JpaItemWriter<AnnualStatement> annualStatementWriter) {
+            JpaItemWriter<AnnualTransaction> annualTransactionWriter) {
 
-        return new StepBuilder("generateAnnualStatementStep", jobRepository)
-                .<AnnualStatement, AnnualStatement>chunk(5)
-                .reader(annualStatementReader())
-                .processor(annualStatementProcessor)
-                .writer(annualStatementWriter)
+        return new StepBuilder(
+                "loadAnnualTransactionsStep",
+                jobRepository
+        )
+                .<AnnualTransaction, AnnualTransaction>chunk(5)
+                .reader(annualTransactionReader())
+                .processor(annualTransactionProcessor)
+                .writer(annualTransactionWriter)
+
+                .faultTolerant()
+                .skipPolicy(transactionSkipPolicy)
+
                 .listener(batchStepListener)
                 .taskExecutor(batchTaskExecutor)
                 .transactionManager(transactionManager)
@@ -101,13 +181,63 @@ public class AnnualStatementJobConfig {
     }
 
     @Bean
+    public Step generateAnnualStatementsStep(
+            JobRepository jobRepository,
+            PlatformTransactionManager transactionManager,
+            ListItemReader<Long> annualAccountIdReader,
+            JpaItemWriter<AnnualStatement> annualStatementWriter) {
+
+        return new StepBuilder(
+                "generateAnnualStatementsStep",
+                jobRepository
+        )
+                .<Long, AnnualStatement>chunk(5)
+                .reader(annualAccountIdReader)
+                .processor(annualStatementProcessor)
+                .writer(annualStatementWriter)
+                .listener(batchStepListener)
+                .transactionManager(transactionManager)
+                .build();
+    }
+
+    private LocalDate parseDate(String value) {
+
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        DateTimeFormatter[] formats = {
+                DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+                DateTimeFormatter.ofPattern("yyyy/MM/dd"),
+                DateTimeFormatter.ofPattern("dd-MM-yyyy"),
+                DateTimeFormatter.ofPattern("dd/MM/yyyy")
+        };
+
+        for (DateTimeFormatter format : formats) {
+
+            try {
+                return LocalDate.parse(value, format);
+
+            } catch (DateTimeParseException ignored) {
+            }
+        }
+
+        return null;
+    }
+
+    @Bean
     public Job annualStatementJob(
             JobRepository jobRepository,
-            Step generateAnnualStatementStep) {
+            Step loadAnnualTransactionsStep,
+            Step generateAnnualStatementsStep) {
 
-        return new JobBuilder("annualStatementJob", jobRepository)
+        return new JobBuilder(
+                "annualStatementJob",
+                jobRepository
+        )
                 .listener(batchJobListener)
-                .start(generateAnnualStatementStep)
+                .start(loadAnnualTransactionsStep)
+                .next(generateAnnualStatementsStep)
                 .build();
     }
 }
