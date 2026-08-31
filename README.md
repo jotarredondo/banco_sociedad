@@ -29,7 +29,8 @@ Cada proceso fue implementado como un Job independiente de Spring Batch.
 * Spring Batch 6
 * Spring Data JPA
 * Hibernate
-* H2 Database
+* MySQL 8.0
+* MySQL Connector/J
 * Maven
 * Lombok
 * SLF4J
@@ -479,15 +480,14 @@ Los logs permiten visualizar:
 
 # Configuración de la base de datos
 
-Para esta implementación se utiliza H2 en memoria.
-
 Configuración:
 
 ```properties
-spring.datasource.url=jdbc:h2:mem:bancodb
-spring.datasource.driver-class-name=org.h2.Driver
-spring.datasource.username=sa
-spring.datasource.password=
+spring.datasource.url=jdbc:mysql://localhost:3306/banco_sociedad?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+spring.datasource.username=root
+spring.datasource.password=TU_PASSWORD
+
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
 
 spring.jpa.hibernate.ddl-auto=create
 spring.jpa.show-sql=true
