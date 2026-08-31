@@ -6,29 +6,25 @@ import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.step.skip.SkipPolicy;
 import org.springframework.stereotype.Component;
 
+
 @Component
 public class TransactionSkipPolicy implements SkipPolicy {
 
     private static final Logger log =
             LoggerFactory.getLogger(TransactionSkipPolicy.class);
 
-    private static final long MAX_SKIP_COUNT = 5;
-
     @Override
     public boolean shouldSkip(Throwable throwable, long skipCount) {
 
-        boolean shouldSkip =
-                throwable instanceof InvalidTransactionException
-                        && skipCount < MAX_SKIP_COUNT;
+        if (throwable instanceof InvalidTransactionException) {
 
-        if (shouldSkip) {
             log.warn(
-                    "Registro omitido. Error: {} | Skip número: {}",
+                    "Registro inválido omitido. Error: {} | Total omitidos hasta ahora: {}",
                     throwable.getMessage(),
-                    skipCount + 1
-            );
+                    skipCount + 1);
+            return true;
         }
 
-        return shouldSkip;
+        return false;
     }
 }

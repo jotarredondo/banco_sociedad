@@ -18,12 +18,9 @@ public class Transaction {
     @Id
     private Long id;
 
-    private Long accountId;
+    private LocalDate date;
 
     private BigDecimal amount;
 
     private String type;
-
-    private LocalDate date;
-
 }

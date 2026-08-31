@@ -31,7 +31,11 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import org.springframework.core.task.AsyncTaskExecutor;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.List;
 
 
 @Configuration
@@ -69,20 +73,26 @@ public class DailyTransactionJobConfig {
         FlatFileItemReader<Transaction> delegate =
                 new FlatFileItemReaderBuilder<Transaction>()
                         .name("transactionReader")
-                        .resource(new ClassPathResource("data/transactions.csv"))
+                        .resource(new ClassPathResource("data/transacciones.csv"))
                         .linesToSkip(1)
                         .delimited()
-                        .names("id", "accountId", "amount", "type", "date")
+                        .names("id", "fecha", "monto", "tipo")
                         .fieldSetMapper(fieldSet -> {
+
                             Transaction transaction = new Transaction();
 
                             transaction.setId(fieldSet.readLong("id"));
-                            transaction.setAccountId(fieldSet.readLong("accountId"));
-                            transaction.setAmount(fieldSet.readBigDecimal("amount"));
-                            transaction.setType(fieldSet.readString("type"));
-                            transaction.setDate(
-                                    LocalDate.parse(fieldSet.readString("date"))
-                            );
+                            transaction.setType(fieldSet.readString("tipo"));
+
+                            String amountValue = fieldSet.readString("monto");
+
+                            if (amountValue == null || amountValue.isBlank()) {
+                                transaction.setAmount(null);
+                            } else {
+                                transaction.setAmount(
+                                        new BigDecimal(amountValue));
+                            }
+                            transaction.setDate(parseDate(fieldSet.readString("fecha")));
 
                             return transaction;
                         })
@@ -91,6 +101,27 @@ public class DailyTransactionJobConfig {
         return new SynchronizedItemStreamReaderBuilder<Transaction>()
                 .delegate(delegate)
                 .build();
+    }
+
+    private LocalDate parseDate(String value) {
+
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        List<DateTimeFormatter> formats = List.of(
+                DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+                DateTimeFormatter.ofPattern("dd/MM/yyyy")
+        );
+
+        for (DateTimeFormatter formatter : formats) {
+            try {
+                return LocalDate.parse(value, formatter);
+            } catch (DateTimeParseException ignored) {
+            }
+        }
+
+        return null;
     }
 
     @Bean
