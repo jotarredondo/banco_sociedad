@@ -1,218 +1,354 @@
-# Banco Sociedad - Procesamiento Batch con Spring Batch
+# Banco Sociedad - Parte 1 EFT
+## Migración de Procesos Batch con Spring Batch
 
-## Objetivo
+Proyecto desarrollado para la Parte 1 de la Evaluación Final Transversal de
+Desarrollo Backend III.
 
-Este proyecto implementa una solución básica de procesamiento por lotes utilizando Spring Batch, con el propósito de modernizar procesos asociados a un sistema bancario legacy.
+El objetivo es migrar procesos batch asociados al procesamiento de información
+financiera utilizando Spring Boot y Spring Batch, aplicando validación de datos,
+tolerancia a fallos, procesamiento concurrente y generación de resultados
+persistidos en base de datos.
 
-La aplicación procesa información desde archivos CSV, aplica validaciones y transformaciones mediante `ItemProcessor`, y persiste los resultados utilizando JPA y una base de datos H2 para fines de prueba.
+---
 
 ## Tecnologías utilizadas
 
-* Java 21
-* Spring Boot
-* Spring Batch
-* Spring Data JPA
-* Hibernate
-* H2 Database
-* Maven
-* Lombok
+- Java 21
+- Spring Boot 4.1.0
+- Spring Batch
+- Spring Data JPA
+- Hibernate
+- H2 Database
+- Maven
+- Lombok
 
-## Estructura del proyecto
+---
 
-```text
-src/main/java/com/duoc/banco_sociedad
-├── config
-│   └── BatchConfig.java
-│
-├── model
-│   ├── Transaction.java
-│   ├── Account.java
-│   └── AnnualStatement.java
-│
-├── processor
-│   ├── TransactionProcessor.java
-│   ├── AccountInterestProcessor.java
-│   └── AnnualStatementProcessor.java
-│
-├── repository
-│   └── TransactionRepository.java
-│
-└── BancoSociedadApplication.java
+## Procesos implementados
 
-src/main/resources
-├── data
-│   ├── transactions.csv
-│   ├── accounts.csv
-│   └── annual_statements.csv
-│
-└── application.properties
-```
+El proyecto contiene tres Jobs independientes.
 
-## Arquitectura Batch
+### 1. Reporte de Transacciones Diarias
 
-Cada proceso sigue la arquitectura básica de Spring Batch:
+Job:
 
-```text
-Archivo CSV
-    ↓
-ItemReader
-    ↓
-ItemProcessor
-    ↓
-ItemWriter
-    ↓
-Base de datos
-```
+dailyTransactionJob
 
-Cada flujo se ejecuta dentro de un `Step`, el cual pertenece a un `Job`.
+Step:
 
-## Jobs implementados
+processTransactionsStep
 
-### 1. dailyTransactionJob
+Archivo procesado:
 
-Procesa las transacciones diarias contenidas en `transactions.csv`.
+movimientos_financieros_diarios.csv
 
-El flujo permite:
+El proceso:
 
-* Leer transacciones desde CSV.
-* Validar que el monto exista.
-* Detectar transacciones con montos negativos.
-* Persistir los registros procesados.
+- Lee las transacciones desde CSV.
+- Valida monto, fecha y tipo de transacción.
+- Reconoce cuatro formatos de fecha:
+    - yyyy-MM-dd
+    - yyyy/MM/dd
+    - dd-MM-yyyy
+    - dd/MM/yyyy
+- Descarta fechas inválidas.
+- Descarta montos nulos.
+- Descarta tipos distintos de credito y debito.
+- Detecta montos negativos como transacciones anómalas.
+- Persiste los registros válidos en base de datos.
+- Genera un resumen de ejecución al finalizar.
 
-En caso de detectar una transacción con monto negativo, el sistema muestra un mensaje indicando que se trata de una transacción anómala.
+Resultado obtenido con el dataset entregado:
 
-### 2. monthlyInterestJob
+Registros leídos: 1000
+Registros persistidos: 480
+Registros filtrados: 520
+Registros omitidos por skip: 0
+Estado Job: COMPLETED
 
-Procesa las cuentas almacenadas en `accounts.csv`.
+---
 
-El flujo permite:
+### 2. Cálculo de Intereses
 
-* Leer cuentas de ahorro y préstamos.
-* Obtener el saldo y la tasa de interés.
-* Calcular el interés correspondiente.
-* Actualizar el saldo final.
-* Persistir el resultado.
+Job:
 
-El cálculo utilizado es:
+quarterlyInterestJob
 
-```text
-Interés = Saldo × Tasa de interés
-```
+Step:
 
-### 3. annualStatementJob
+calculateQuarterlyInterestStep
 
-Procesa los estados de cuenta contenidos en `annual_statements.csv`.
+Archivo procesado:
 
-El flujo permite:
+intereses_trimestrales.csv
 
-* Leer información anual de las cuentas.
-* Evaluar el saldo final.
-* Clasificar el estado como `OK` o `REVIEW`.
-* Persistir el estado de cuenta procesado.
+El proceso valida:
 
-Cuando el saldo final es negativo, el registro queda marcado como:
+- Saldo nulo.
+- Edad nula.
+- Edad fuera del rango definido entre 18 y 110 años.
+- Nombre vacío o Unknown.
+- Tipo de cuenta inválido.
+- Registros duplicados.
 
-```text
-REVIEW
-```
+Los tipos válidos son:
 
-## Selección del Job
+ahorro
+prestamo
+hipoteca
 
-El Job que se ejecutará puede configurarse mediante `application.properties`.
+También se calcula:
 
-Ejemplo:
+interesCalculado
+saldoFinal
 
-```properties
-spring.batch.job.name=dailyTransactionJob
-```
+### Tasas utilizadas
 
-Para ejecutar el Job de intereses:
+Para efectos de la implementación se definieron las siguientes tasas:
 
-```properties
-spring.batch.job.name=monthlyInterestJob
-```
+Tipo | Tasa
+Ahorro | 1%
+Préstamo | 2%
+Hipoteca | 1.5%
 
-Para ejecutar el Job anual:
+Estas tasas corresponden a una decisión de diseño del proyecto, debido a que
+los archivos proporcionados no incluyen una regla específica de cálculo de
+intereses.
 
-```properties
-spring.batch.job.name=annualStatementJob
-```
+La detección de duplicados se realiza comparando la combinación:
 
-## Configuración de H2
+cuentaId + nombre + saldo + edad + tipo
 
-El proyecto utiliza una base de datos H2 en memoria para realizar las pruebas del procesamiento Batch.
+De esta forma, cuentas repetidas no son eliminadas cuando contienen información
+diferente.
+
+Resultado final:
+
+Registros persistidos: 396
+Duplicados válidos descartados: 2
+Estado Job: COMPLETED
+
+Nota: Las instrucciones generales de la EFT mencionan un cálculo mensual,
+mientras que el dataset proporcionado corresponde a intereses_trimestrales.csv.
+La implementación sigue el archivo oficial suministrado para el ejercicio.
+
+---
+
+### 3. Generación de Estados Financieros Anuales
+
+Job:
+
+annualStatementJob
+
+Step:
+
+generateAnnualStatementStep
+
+Archivo procesado:
+
+estados_financieros_anuales.csv
+
+El proceso:
+
+- Lee los movimientos financieros anuales.
+- Valida fechas.
+- Valida montos nulos.
+- Valida tipos de transacción.
+- Normaliza depósito a deposito.
+- Reemplaza descripciones faltantes por SIN DESCRIPCION.
+- Persiste los movimientos válidos.
+- Genera un resumen anual por cuenta.
+
+El resumen incluye:
+
+Cuenta
+Año
+Depósitos
+Egresos
+Saldo
+Cantidad de movimientos
+
+Los egresos consideran:
+
+retiro
+compra
+pago
+
+La agregación se realiza después de persistir los movimientos válidos.
+
+---
+
+## Manejo de errores
+
+Los tres procesos utilizan tolerancia a fallos mediante Spring Batch.
 
 Configuración utilizada:
 
-```properties
-spring.datasource.url=jdbc:h2:mem:bancodb
-spring.datasource.driver-class-name=org.h2.Driver
-spring.datasource.username=sa
-spring.datasource.password=
+.faultTolerant()
+.retry(TransientDataAccessException.class)
+.retryLimit(3)
 
-spring.jpa.hibernate.ddl-auto=create
-spring.jpa.show-sql=true
+Esto permite realizar hasta tres intentos frente a fallos transitorios de acceso
+a datos, como problemas temporales de conexión con la base de datos.
 
-spring.batch.jdbc.initialize-schema=always
-```
+---
 
-## Ejecución del proyecto
+## Política de reejecución
 
-1. Abrir el proyecto en IntelliJ IDEA.
-2. Verificar el Job deseado en `application.properties`.
-3. Ejecutar la clase:
+El proceso de transacciones diarias incluye una política adicional para manejar
+fallos críticos.
 
-```text
+El DailyTransactionJobListener revisa el estado final del Job.
+
+Si termina en:
+
+FAILED
+
+se utiliza:
+
+jobOperator.restart(jobExecution);
+
+para solicitar automáticamente la reejecución del Job.
+
+Esta política complementa los reintentos utilizados para fallos temporales.
+
+---
+
+## Optimización y procesamiento concurrente
+
+Para el proceso de transacciones diarias se implementó procesamiento
+multihilo mediante:
+
+SimpleAsyncTaskExecutor
+
+y un:
+
+SynchronizedItemStreamReader
+
+para proteger el acceso concurrente al reader.
+
+Se realizaron pruebas manteniendo el mismo tamaño de chunk y variando la
+cantidad de hilos.
+
+Cantidad de hilos | Tiempo de ejecución
+1 | 868 ms
+3 | 715 ms
+5 | 1073 ms
+
+La configuración seleccionada fue:
+
+executor.setConcurrencyLimit(3);
+
+Los 3 hilos entregaron el mejor tiempo entre las configuraciones evaluadas.
+
+En comparación con la ejecución de un solo hilo, la mejora observada fue
+aproximadamente de un 17.6%.
+
+El uso de 5 hilos aumentó el tiempo de ejecución, probablemente debido al
+overhead adicional asociado a la administración de concurrencia para el volumen
+de datos utilizado.
+
+---
+
+## Integridad y consistencia de datos
+
+Durante la migración se aplicaron reglas para evitar persistir información que
+pueda afectar la consistencia de los resultados.
+
+Entre ellas:
+
+- Validación de campos obligatorios.
+- Soporte para múltiples formatos de fecha.
+- Normalización de valores.
+- Control de tipos válidos.
+- Validación de rangos.
+- Identificación de duplicados.
+- Registro de anomalías.
+- Manejo de descripciones faltantes.
+- Retry para errores transitorios.
+- Reejecución frente a fallos críticos.
+
+Las reglas que no estaban definidas explícitamente en los datos entregados,
+como las tasas de interés y el rango de edad, se documentan como decisiones de
+diseño de la solución.
+
+---
+
+## Estructura principal
+
+src/main/java/com/duoc/banco_sociedad
+|
++-- config
+|   +-- DailyTransactionBatchConfig.java
+|   +-- QuarterlyInterestBatchConfig.java
+|   +-- AnnualStatementBatchConfig.java
+|
++-- listener
+|   +-- DailyTransactionJobListener.java
+|   +-- AnnualStatementJobListener.java
+|
++-- model
+|   +-- DailyTransaction.java
+|   +-- QuarterlyInterest.java
+|   +-- AnnualStatement.java
+|
++-- processor
+|   +-- DailyTransactionProcessor.java
+|   +-- QuarterlyInterestProcessor.java
+|   +-- AnnualStatementProcessor.java
+|
++-- repository
+|   +-- TransactionRepository.java
+|   +-- AnnualStatementRepository.java
+|
++-- utils
+|   +-- ParseDate.java
++-- BancoSociedadApplication.java
+
+Los archivos CSV se encuentran en:
+
+src/main/resources/data
+
+---
+
+## Ejecución
+
+El Job que se desea ejecutar se selecciona en:
+
+src/main/resources/application.properties
+
+Por ejemplo:
+
+spring.batch.job.name=dailyTransactionJob
+
+Otros Jobs disponibles:
+
+spring.batch.job.name=quarterlyInterestJob
+
+spring.batch.job.name=annualStatementJob
+
+Desde IntelliJ IDEA se puede ejecutar directamente:
+
 BancoSociedadApplication
-```
 
-4. Revisar la consola.
+También puede ejecutarse desde consola en Windows:
 
-Una ejecución exitosa mostrará un resultado similar a:
+mvnw.cmd spring-boot:run
 
-```text
-Job: [dailyTransactionJob] launched
-Executing step: [processTransactionsStep]
-
-Step: [processTransactionsStep] executed
-Job: [dailyTransactionJob] completed
-status: [COMPLETED]
-```
-
-## Manejo de errores y validaciones
-
-Los `ItemProcessor` realizan validaciones antes de persistir la información.
-
-Ejemplos implementados:
-
-* Registros sin monto pueden ser descartados.
-* Transacciones con montos negativos son identificadas como anómalas.
-* Estados anuales con saldo negativo son clasificados como `REVIEW`.
-
-Esto permite identificar información inconsistente proveniente de sistemas legacy sin detener necesariamente el procesamiento completo.
+---
 
 ## Resultado
 
-La aplicación implementa los tres procesos Batch solicitados:
+La solución permite migrar los tres procesos batch definidos utilizando Spring
+Batch, manteniendo separación entre Jobs, validación y transformación de datos,
+persistencia, tolerancia a fallos y optimización del procesamiento.
 
-```text
-dailyTransactionJob
-monthlyInterestJob
-annualStatementJob
-```
+Además, se incorporaron mejoras respecto de la versión inicial del proyecto:
 
-Cada Job utiliza los componentes principales de Spring Batch:
-
-```text
-Job
-↓
-Step
-↓
-ItemReader
-↓
-ItemProcessor
-↓
-ItemWriter
-```
-
-permitiendo leer, transformar y persistir datos provenientes de archivos CSV.
+- Compatibilidad con los cuatro formatos de fecha presentes en los archivos.
+- Validaciones adicionales de consistencia.
+- Detección de registros duplicados.
+- Comparación real de configuraciones de concurrencia.
+- Selección justificada de tres hilos.
+- Reintentos frente a fallos temporales.
+- Política de reejecución frente a fallos críticos.

@@ -5,13 +5,12 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 
 @Entity
-@Table(name = "annual_statement_")
+@Table(name = "quarterly_interest")
 @Getter
 @Setter
-public class AnnualStatement {
+public class QuarterlyInterest {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -19,11 +18,15 @@ public class AnnualStatement {
 
     private Long cuentaId;
 
-    private LocalDate fecha;
+    private String nombre;
 
-    private String transaccion;
+    private BigDecimal saldo;
 
-    private BigDecimal monto;
+    private Integer edad;
 
-    private String descripcion;
+    private String tipo;
+
+    private BigDecimal interesCalculado;
+
+    private BigDecimal saldoFinal;
 }

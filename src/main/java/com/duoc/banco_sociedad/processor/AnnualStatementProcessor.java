@@ -4,30 +4,46 @@ import com.duoc.banco_sociedad.model.AnnualStatement;
 import org.springframework.batch.infrastructure.item.ItemProcessor;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-
 @Component
 public class AnnualStatementProcessor
         implements ItemProcessor<AnnualStatement, AnnualStatement> {
 
     @Override
-    public AnnualStatement process(AnnualStatement statement) {
+    public AnnualStatement process(
+            AnnualStatement statement) {
 
-        if (statement.getFinalBalance() == null) {
+        if (statement.getFecha() == null) {
+            System.out.println("Registro descartado por fecha inválida. Cuenta: " + statement.getCuentaId());
             return null;
         }
 
-        if (statement.getFinalBalance()
-                .compareTo(BigDecimal.ZERO) < 0) {
-            statement.setStatus("REVIEW");
+        if (statement.getMonto() == null) {
+            System.out.println("Registro descartado por monto nulo. Cuenta: " + statement.getCuentaId());
+            return null;
+        }
 
+        if (statement.getTransaccion() == null || statement.getTransaccion().isBlank()) {
+            System.out.println("Registro descartado por transacción vacía. Cuenta: " + statement.getCuentaId());
+            return null;
+        }
+
+        String transaccionNormalizada = statement.getTransaccion().trim().toLowerCase();
+
+        if (transaccionNormalizada.equals("depósito")) {
+            transaccionNormalizada = "deposito";
+        }
+
+        if (!transaccionNormalizada.equals("compra") && !transaccionNormalizada.equals("deposito") && !transaccionNormalizada.equals("retiro")&& !transaccionNormalizada.equals("pago")) {
             System.out.println(
-                    "Estado anual requiere revisión: cuenta "
-                            + statement.getAccountId());
+                    "Registro descartado por transacción inválida. Cuenta: " + statement.getCuentaId() + " Tipo: " + statement.getTransaccion());
+            return null;
+        }
+        statement.setTransaccion(transaccionNormalizada);
 
-        } else {
-            statement.setStatus("OK");}
-
+        if (statement.getDescripcion() == null || statement.getDescripcion().isBlank()) {
+            statement.setDescripcion(
+                    "SIN DESCRIPCION");
+        }
         return statement;
     }
 }

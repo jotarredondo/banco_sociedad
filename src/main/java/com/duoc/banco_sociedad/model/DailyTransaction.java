@@ -7,19 +7,21 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Entity
-@Table(name = "account_")
+@Table(name = "transaction_")
 @Getter
 @Setter
-public class Account {
+public class DailyTransaction {
 
     @Id
     private Long id;
 
-    private String type;
+    private String tipo;
 
-    private BigDecimal balance;
+    private BigDecimal monto;
 
-    private BigDecimal interestRate;
+    private LocalDate fecha;
+
 }
